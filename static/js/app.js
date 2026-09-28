@@ -156,10 +156,16 @@ async function api(path, options = {}) {
 
 // ---------- rendering ----------
 
+// The wake-progress list belongs to a wake that's happening now: while the PC
+// is waking or booting, and for a few minutes after it answers. Once the PC is
+// off (or the wake timed out), it's history, and the event log keeps it.
 function wakeActive(s) {
   const wol = s.last_wol;
   if (!wol) return false;
-  return Date.now() - wol.at < s.wake_timeout_ms + 5 * 60e3;
+  const status = s.pc.status;
+  if (status === "waking" || status === "booting") return true;
+  if (status === "online") return Date.now() - wol.at < s.wake_timeout_ms + 5 * 60e3;
+  return false;
 }
 
 function grubAfterWake(s) {
