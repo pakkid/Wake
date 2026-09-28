@@ -12,6 +12,9 @@ services:
   wake:
     build: .
     image: wake:latest
+    # Built from this repo, never pulled: there is no wake image on a registry.
+    # This also makes every (re)deploy rebuild from the current code.
+    pull_policy: build
     container_name: wake
     restart: unless-stopped
     network_mode: host

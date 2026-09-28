@@ -399,6 +399,7 @@ Reboot Windows normally and you'll land in Linux: the choice was one-shot.
 
 ## 15. Troubleshooting Docker networking
 
+- **"pull access denied for wake".** Some compose/Portainer version tried to download the image from Docker Hub instead of building it. `pull_policy: build` in `docker-compose.yml` prevents this. If you still see it, redeploy with Portainer's "Re-pull image" option switched off.
 - **`ports:` has no effect.** That's expected with host networking. Wake listens on the host's `WEB_PORT` and `GRUB_PROTOCOL_PORT` directly. Check with:
   ```bash
   ss -tlnp | grep -E ':8080|:8081'
