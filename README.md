@@ -95,7 +95,7 @@ wake_boot=1
 | Range | `Range: bytes=N-` → `206 Partial Content` (GRUB reopens with a Range after seeking back) |
 | Errors | `404` other paths, `405` non-GET, `400` malformed, `431` headers over 4 KiB, `403` source IP not in `GRUB_ALLOWED_IPS` |
 | Server timeouts | 5 s to receive the request; at most 32 connections at once |
-| GRUB timeouts | TCP connect about 16 s; ARP for a host that's off about 16 s; DHCP with no DHCP server can take tens of seconds |
+| GRUB timeouts | TCP connect about 16 s (a whole boot with Wake stopped took 19 s in QEMU); ARP for a host that's off about 16 s; DHCP with no DHCP server can take tens of seconds |
 | Failure | Any failure leaves `wake_boot=0`: GRUB boots Linux after its normal menu timeout |
 
 ## 3. Requirements
@@ -105,6 +105,7 @@ wake_boot=1
   - A wired Ethernet NIC that supports Wake-on-LAN.
   - In the firmware setup:
     - **UEFI network stack enabled.** The option is usually called "Network Stack", "IPv4 PXE Support" or "UEFI Network". Without it GRUB sees no network card; the PC still boots Linux, but Wake can't choose.
+    - **Network boot may also need to be in the boot order**, *after* your disk. Much firmware only starts drivers for devices in the boot list. The QEMU test shows exactly this: with the NIC out of the boot order, GRUB reports `no network card found`; with it listed after the disk, everything works. The disk still boots first, so this doesn't slow anything down.
     - Wake-on-LAN / "Power On by PCI-E" enabled, and ErP / deep sleep disabled.
 - **The server:** any always-on Linux machine on the **same LAN** with Docker (Portainer optional).
 - **Building without Docker:** Rust 1.85+ (`rustup`).
@@ -414,7 +415,7 @@ Press `c` at the GRUB menu and try the commands in §11 step by step.
 
 | Symptom in GRUB | Cause and fix |
 |---|---|
-| `net_ls_cards` prints nothing | The firmware didn't load its UEFI network driver. Enable "Network Stack" / "IPv4 PXE Support" in the BIOS. Some boards also need "Fast Boot" off. |
+| `net_ls_cards` prints nothing, or `no network card found` | The firmware didn't start its UEFI network driver. Enable "Network Stack" / "IPv4 PXE Support", put network (PXE) boot in the boot order **after** the disk, and try with "Fast Boot" off. |
 | `net_dhcp` hangs, then fails | No DHCP answer, or the wrong card. Use `WAKE_NET_CARD=efinet0` or `WAKE_NET=static`. |
 | `error: couldn't resolve hardware address` / time-out | The Wake host is off, or on another subnet without a gateway. For static mode across subnets, set `WAKE_STATIC_GW`. |
 | `error: connection refused` / `time out opening` | The container isn't running, the port is wrong, or the host firewall blocks it |
@@ -511,7 +512,21 @@ cargo test
   ```bash
   WAKE_CONFIG=grub/wake.default sh grub/06_wake | grub-script-check
   ```
-- **Manual GRUB tests**, which need real firmware: §11 and §12.
+- **Real GRUB in QEMU:** `tests/qemu/grub-boot-test.sh` builds a standalone GRUB 2.14 EFI image. The image contains the output of `06_wake` and two test entries that print which one booted and power off. It boots that image under OVMF with a virtio NIC and user-mode networking, against a scratch Wake instance on the host. It needs `qemu-system-x86_64`, `edk2-ovmf` and `grub`, and never touches the host's GRUB.
+  ```bash
+  tests/qemu/grub-boot-test.sh
+  ```
+  | Scenario | Expected | Result (GRUB 2.14, OVMF 202608) |
+  |---|---|---|
+  | Windows chosen | Windows, choice used up | pass, 4 s |
+  | Nothing chosen / Linux chosen | Linux | pass, 4 s |
+  | Static address instead of DHCP | Windows | pass, 3 s |
+  | No network card | Linux | pass, 3 s |
+  | Server replies `1`, `wake_boot=banana`, or a block that sets `default=` | Linux (`load_env` whitelist) | pass |
+  | Wake not running | Linux | pass, 19 s (GRUB's ~16 s connect timeout) |
+
+  In these runs GRUB made one request per boot. The repeat window is there in case other firmware or GRUB builds reopen the file.
+- **Manual GRUB tests**, which need your real firmware: §11 and §12.
 
 ## Project layout
 
