@@ -17,6 +17,26 @@ struct Assets;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+/// A short hash of every embedded asset, used as the `?v=` cache-buster so a
+/// redeploy with changed CSS or JS is picked up even if VERSION didn't change.
+pub fn asset_version() -> &'static str {
+    static HASH: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    HASH.get_or_init(|| {
+        let mut names: Vec<_> = Assets::iter().collect();
+        names.sort();
+        // FNV-1a over each file's name and SHA-256.
+        let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+        for name in names {
+            let digest = Assets::get(&name).map(|f| f.metadata.sha256_hash());
+            for b in name.bytes().chain(digest.into_iter().flatten()) {
+                h ^= u64::from(b);
+                h = h.wrapping_mul(0x0100_0000_01b3);
+            }
+        }
+        format!("{h:016x}")[..10].to_string()
+    })
+}
+
 #[derive(Template)]
 #[template(path = "index.html")]
 struct Index {
@@ -61,7 +81,7 @@ async fn index(State(st): State<AppState>, headers: HeaderMap) -> Response {
         next_key: next.as_str(),
         next_label: next.label(),
         wake_label: format!("Wake {} into {}", st.cfg.pc_name, next.label()),
-        version: VERSION,
+        version: asset_version(),
         locked,
         initial_json,
     };

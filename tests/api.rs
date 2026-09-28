@@ -89,6 +89,24 @@ async fn wake_with_os_selects_and_sends() {
 }
 
 #[tokio::test]
+async fn wake_sends_to_every_configured_mac() {
+    let h = harness(&[("PC_MAC", "b4:7e:00:99:f8:ac, b4:2e:99:f0:f8:ac")]);
+    let res = send(&h.app, post("/api/wake/windows")).await;
+    assert_eq!(res.status(), StatusCode::OK);
+    let sent: Vec<String> = h
+        .wol
+        .sent
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|m| m.to_string())
+        .collect();
+    assert_eq!(sent, vec!["b4:7e:00:99:f8:ac", "b4:2e:99:f0:f8:ac"]);
+    let s = body_json(send(&h.app, get("/api/status")).await).await;
+    assert_eq!(s["setup"]["pc_macs"].as_array().unwrap().len(), 2);
+}
+
+#[tokio::test]
 async fn wake_uses_current_choice() {
     let h = harness(&[]);
     send(&h.app, post("/api/boot/windows")).await;
@@ -316,6 +334,10 @@ async fn page_and_assets_are_served() {
     let html = body_text(res).await;
     assert!(html.contains("<h1 class=\"masthead-name\">Wake</h1>"));
     assert!(html.contains("Wake Desk into Linux"));
+    // Assets are cache-busted by content, not by the crate version.
+    let v = wake::web::asset_version();
+    assert_eq!(v.len(), 10);
+    assert!(html.contains(&format!("/static/js/app.js?v={v}")));
 
     let css = send(&h.app, get("/static/css/wake.css")).await;
     assert_eq!(css.status(), StatusCode::OK);

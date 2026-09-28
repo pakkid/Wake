@@ -95,7 +95,26 @@ pub fn magic_packet(mac: &MacAddr) -> [u8; PACKET_LEN] {
 /// Anything that can wake the PC. The real implementation broadcasts over UDP;
 /// tests substitute a recorder.
 pub trait WolSender: Send + Sync {
-    fn send(&self, mac: MacAddr) -> BoxFuture<'_, std::io::Result<()>>;
+    /// Sends a magic packet for every address in `macs`.
+    fn send<'a>(&'a self, macs: &'a [MacAddr]) -> BoxFuture<'a, std::io::Result<()>>;
+}
+
+/// Parses one or more MACs separated by commas or whitespace, dropping repeats.
+pub fn parse_mac_list(s: &str) -> Result<Vec<MacAddr>, InvalidMac> {
+    let mut macs = Vec::new();
+    for part in s
+        .split(|c: char| c == ',' || c.is_whitespace())
+        .filter(|p| !p.is_empty())
+    {
+        let mac = part.parse::<MacAddr>()?;
+        if !macs.contains(&mac) {
+            macs.push(mac);
+        }
+    }
+    if macs.is_empty() {
+        return Err(InvalidMac(s.to_string()));
+    }
+    Ok(macs)
 }
 
 pub struct UdpWol {
@@ -119,24 +138,33 @@ impl UdpWol {
 }
 
 impl WolSender for UdpWol {
-    fn send(&self, mac: MacAddr) -> BoxFuture<'_, std::io::Result<()>> {
+    fn send<'a>(&'a self, macs: &'a [MacAddr]) -> BoxFuture<'a, std::io::Result<()>> {
         Box::pin(async move {
-            let packet = magic_packet(&mac);
+            let packets: Vec<_> = macs.iter().map(magic_packet).collect();
             let socket = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).await?;
             socket.set_broadcast(true)?;
-            // UDP is lossy and a sleeping NIC only needs one copy, so send a few.
+            // UDP is lossy and a sleeping NIC only needs one copy, so send a few
+            // rounds, one packet per address in each.
             for i in 0..self.repeats {
                 if i > 0 {
                     tokio::time::sleep(self.gap).await;
                 }
-                let sent = socket.send_to(&packet, self.target).await?;
-                if sent != PACKET_LEN {
-                    return Err(std::io::Error::other(format!(
-                        "short send: {sent} of {PACKET_LEN} bytes"
-                    )));
+                for packet in &packets {
+                    let sent = socket.send_to(packet, self.target).await?;
+                    if sent != PACKET_LEN {
+                        return Err(std::io::Error::other(format!(
+                            "short send: {sent} of {PACKET_LEN} bytes"
+                        )));
+                    }
                 }
             }
-            tracing::info!(%mac, target = %self.target, repeats = self.repeats, "sent magic packet");
+            let list: Vec<String> = macs.iter().map(ToString::to_string).collect();
+            tracing::info!(
+                macs = %list.join(","),
+                target = %self.target,
+                repeats = self.repeats,
+                "sent magic packets"
+            );
             Ok(())
         })
     }
@@ -192,6 +220,25 @@ mod tests {
         }
     }
 
+    const OTHER: MacAddr = MacAddr([0xb4, 0x2e, 0x99, 0xf0, 0xf8, 0xac]);
+
+    #[test]
+    fn parses_mac_lists() {
+        assert_eq!(parse_mac_list("00:11:22:aa:bb:cc"), Ok(vec![MAC]));
+        assert_eq!(
+            parse_mac_list("00:11:22:aa:bb:cc, b4-2e-99-f0-f8-ac"),
+            Ok(vec![MAC, OTHER])
+        );
+        assert_eq!(
+            parse_mac_list("00:11:22:aa:bb:cc b42e99f0f8ac,001122AABBCC"),
+            Ok(vec![MAC, OTHER]),
+            "whitespace separates too; repeats are dropped"
+        );
+        assert!(parse_mac_list("").is_err());
+        assert!(parse_mac_list(" , ").is_err());
+        assert!(parse_mac_list("00:11:22:aa:bb:cc,nope").is_err());
+    }
+
     #[tokio::test]
     async fn sends_packets_over_udp() {
         let rx = UdpSocket::bind("127.0.0.1:0").await.unwrap();
@@ -201,14 +248,15 @@ mod tests {
             repeats: 2,
             gap: Duration::from_millis(1),
         };
-        wol.send(MAC).await.unwrap();
+        wol.send(&[MAC, OTHER]).await.unwrap();
         let mut buf = [0u8; 256];
-        for _ in 0..2 {
+        // Two rounds, one packet per address in each.
+        for expected in [MAC, OTHER, MAC, OTHER] {
             let n = tokio::time::timeout(Duration::from_secs(2), rx.recv(&mut buf))
                 .await
                 .expect("packet arrives")
                 .unwrap();
-            assert_eq!(&buf[..n], &magic_packet(&MAC)[..]);
+            assert_eq!(&buf[..n], &magic_packet(&expected)[..]);
         }
     }
 }

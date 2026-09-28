@@ -171,7 +171,7 @@ All settings are environment variables. Empty values count as unset.
 | Variable | Default | Meaning |
 |---|---|---|
 | `PC_NAME` | `My PC` | Name shown in the UI |
-| `PC_MAC` | *required* | MAC of the PC's wired NIC (`aa:bb:cc:dd:ee:ff`, `aa-bb-…` or `aabbccddeeff`) |
+| `PC_MAC` | *required* | MAC of the PC's wired NIC (`aa:bb:cc:dd:ee:ff`, `aa-bb-…` or `aabbccddeeff`). Several are allowed, comma-separated, for example when Linux and Windows or the BIOS report different ones; each gets its own packets. |
 | `PC_IP` | *(none)* | The PC's IP. Enables status checks and, by default, restricts the GRUB port to this address. |
 | `WOL_BROADCAST` | `255.255.255.255` | Where magic packets go. Prefer the subnet broadcast, e.g. `192.168.1.255`. |
 | `WOL_PORT` | `9` | UDP port for magic packets (7 and 9 are conventional) |
@@ -203,7 +203,13 @@ ip -br link
 cat /sys/class/net/enp6s0/address
 ```
 
-Use the **wired** interface (`enp…`/`eno…`/`eth…`), not Wi-Fi. In Windows, `getmac /v` in a terminal shows the same address as "Physical Address". Give the PC a **DHCP reservation** on your router so `PC_IP` stays the same.
+Use the **wired** interface (`enp…`/`eno…`/`eth…`), not Wi-Fi. In Windows, `getmac /v` in a terminal shows the same address as "Physical Address".
+
+If Linux, Windows, the BIOS or your router's client list disagree, put all of them in `PC_MAC`, separated by commas. Extra packets are harmless:
+
+```text
+PC_MAC=b4:7e:00:99:f8:ac,b4:2e:99:f0:f8:ac
+``` Give the PC a **DHCP reservation** on your router so `PC_IP` stays the same.
 
 ## 8. Testing Wake-on-LAN
 

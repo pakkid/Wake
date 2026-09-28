@@ -371,7 +371,7 @@ function renderAbout(s) {
   const rows = [
     ["Version", st.version],
     ["PC address", st.pc_ip || "Not set"],
-    ["PC MAC", st.pc_mac],
+    [st.pc_macs.length > 1 ? "PC MACs" : "PC MAC", st.pc_macs.join(", ")],
     ["Magic packet to", st.wol_target],
     ["Checks", st.probes.join(", ")],
     ["GRUB asks", `http://${location.hostname}:${st.grub_port}/grub/boot.env`],

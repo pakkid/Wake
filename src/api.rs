@@ -46,7 +46,7 @@ pub struct PcInfo {
 #[derive(Debug, Clone, Serialize)]
 pub struct SetupInfo {
     pub version: &'static str,
-    pub pc_mac: String,
+    pub pc_macs: Vec<String>,
     pub pc_ip: Option<String>,
     pub probes: Vec<String>,
     pub wol_target: String,
@@ -84,7 +84,7 @@ pub async fn status(st: &AppState) -> Status {
         auth_required: cfg.wake_token.is_some(),
         setup: SetupInfo {
             version: crate::web::VERSION,
-            pc_mac: cfg.pc_mac.to_string(),
+            pc_macs: cfg.pc_macs.iter().map(ToString::to_string).collect(),
             pc_ip: cfg.pc_ip.map(|ip| ip.to_string()),
             probes: cfg.probes.iter().map(ToString::to_string).collect(),
             wol_target: format!("{}:{}", cfg.wol_broadcast, cfg.wol_port),
@@ -136,7 +136,7 @@ async fn wake(st: &AppState, os: Option<Os>) -> Result<Json<WakeResponse>, ApiEr
     }
     let next = st.boot.peek_at(now_ms()).await;
     let already_online = st.monitor.is_online();
-    let result = st.wol.send(st.cfg.pc_mac).await;
+    let result = st.wol.send(&st.cfg.pc_macs).await;
     st.boot
         .record_wol_at(
             next,

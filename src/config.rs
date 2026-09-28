@@ -44,7 +44,8 @@ impl AllowList {
 #[derive(Debug, Clone)]
 pub struct Config {
     pub pc_name: String,
-    pub pc_mac: MacAddr,
+    /// One or more MACs for the PC's NIC; a magic packet goes to each.
+    pub pc_macs: Vec<MacAddr>,
     pub pc_ip: Option<IpAddr>,
     pub wol_broadcast: Ipv4Addr,
     pub wol_port: u16,
@@ -120,8 +121,7 @@ impl Config {
         let env = Env(vars);
 
         let pc_mac_raw = env.get("PC_MAC").ok_or(ConfigError::Missing("PC_MAC"))?;
-        let pc_mac = pc_mac_raw
-            .parse::<MacAddr>()
+        let pc_macs = crate::wol::parse_mac_list(pc_mac_raw)
             .map_err(|e| Env::invalid("PC_MAC", pc_mac_raw, e.to_string()))?;
 
         let pc_ip = match env.get("PC_IP") {
@@ -197,7 +197,7 @@ impl Config {
 
         Ok(Config {
             pc_name: env.get("PC_NAME").unwrap_or("My PC").to_string(),
-            pc_mac,
+            pc_macs,
             pc_ip,
             wol_broadcast: env.parse("WOL_BROADCAST", Ipv4Addr::BROADCAST)?,
             wol_port: env.port("WOL_PORT", 9)?,
@@ -265,7 +265,7 @@ mod tests {
     fn full_config() {
         let c = Config::from_map(&vars(&[
             ("PC_NAME", "Desk"),
-            ("PC_MAC", "AA-BB-CC-DD-EE-FF"),
+            ("PC_MAC", "AA-BB-CC-DD-EE-FF, 00:11:22:33:44:55"),
             ("PC_IP", "192.168.1.50"),
             ("WOL_BROADCAST", "192.168.1.255"),
             ("WOL_PORT", "7"),
@@ -280,6 +280,13 @@ mod tests {
         ]))
         .unwrap();
         assert_eq!(c.pc_name, "Desk");
+        assert_eq!(
+            c.pc_macs,
+            vec![
+                "aa:bb:cc:dd:ee:ff".parse().unwrap(),
+                "00:11:22:33:44:55".parse().unwrap()
+            ]
+        );
         assert_eq!(c.pc_ip, Some("192.168.1.50".parse().unwrap()));
         assert_eq!(
             c.grub_allowed,
@@ -338,6 +345,10 @@ mod tests {
             Config::from_map(&m)
         };
         assert_eq!(invalid_var(with("PC_MAC", "nope")), "PC_MAC");
+        assert_eq!(
+            invalid_var(with("PC_MAC", "00:11:22:33:44:55,nope")),
+            "PC_MAC"
+        );
         assert_eq!(invalid_var(with("PC_IP", "192.168.1")), "PC_IP");
         assert_eq!(invalid_var(with("WOL_BROADCAST", "::1")), "WOL_BROADCAST");
         assert_eq!(invalid_var(with("WOL_PORT", "70000")), "WOL_PORT");

@@ -17,6 +17,7 @@ services:
     network_mode: host
     environment:
       PC_NAME: ${PC_NAME:-My PC}
+      # One MAC, or several separated by commas.
       PC_MAC: ${PC_MAC:?Set PC_MAC to the PC's network card MAC address}
       PC_IP: ${PC_IP:-}
       WOL_BROADCAST: ${WOL_BROADCAST:-255.255.255.255}

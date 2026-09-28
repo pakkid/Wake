@@ -24,7 +24,7 @@ pub struct MockWol {
 }
 
 impl WolSender for MockWol {
-    fn send(&self, mac: MacAddr) -> BoxFuture<'_, std::io::Result<()>> {
+    fn send<'a>(&'a self, macs: &'a [MacAddr]) -> BoxFuture<'a, std::io::Result<()>> {
         Box::pin(async move {
             if self.fail {
                 return Err(std::io::Error::new(
@@ -32,7 +32,7 @@ impl WolSender for MockWol {
                     "network is unreachable",
                 ));
             }
-            self.sent.lock().unwrap().push(mac);
+            self.sent.lock().unwrap().extend_from_slice(macs);
             Ok(())
         })
     }

@@ -74,7 +74,7 @@ async fn run() -> anyhow::Result<()> {
     tracing::info!(
         version = wake::web::VERSION,
         pc = %cfg.pc_name,
-        mac = %cfg.pc_mac,
+        macs = %cfg.pc_macs.iter().map(ToString::to_string).collect::<Vec<_>>().join(","),
         pc_ip = ?cfg.pc_ip,
         wol_target = %wol.target(),
         default_boot = %cfg.default_boot,
