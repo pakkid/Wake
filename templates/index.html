@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Wake · {{ pc_name }}</title>
+<meta name="description" content="Wake {{ pc_name }} and choose what it boots into.">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#eeeae3" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#111814" media="(prefers-color-scheme: dark)">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Wake">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="format-detection" content="telephone=no">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/favicon.png" type="image/png" sizes="32x32">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="preload" href="/static/fonts/newsreader.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/static/fonts/instrument-sans.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/static/css/broadsheet.css?v={{ version }}">
+<link rel="stylesheet" href="/static/css/wake.css?v={{ version }}">
+<script type="module" src="/static/js/app.js?v={{ version }}"></script>
+</head>
+<body data-status="{{ status_key }}" data-next="{{ next_key }}"{% if locked %} data-locked{% endif %}>
+
+<svg xmlns="http://www.w3.org/2000/svg" class="sprite" aria-hidden="true" focusable="false">
+  <defs>
+    <!-- Broadsheet icons: 24px grid, 1.5 stroke, round caps and joins. -->
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><path d="M12 3.5a8.5 8.5 0 1 0 0 17a8.5 8.5 0 1 0 0-17"/><path d="M12 11v5"/><path d="M12 7.9h.01" stroke-width="2.25"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 4.5L21 19.5H3z"/><path d="M12 10v4"/><path d="M12 16.9h.01" stroke-width="2.25"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><path d="M12 3.5a8.5 8.5 0 1 0 0 17a8.5 8.5 0 1 0 0-17"/><path d="M12 7.5V12l3 2"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></symbol>
+    <symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></symbol>
+    <!-- Drawn for Wake to the same spec. -->
+    <symbol id="i-linux" viewBox="0 0 24 24"><path d="M12 3.5c-2.3 0-3.7 1.8-3.7 4.2v2.1c0 .9-.7 1.8-1.6 3-1 1.3-1.7 2.8-1.7 4.1 0 1.2.8 1.6 1.8 1.4.7 1.2 2.9 2.2 5.2 2.2s4.5-1 5.2-2.2c1 .2 1.8-.2 1.8-1.4 0-1.3-.7-2.8-1.7-4.1-.9-1.2-1.6-2.1-1.6-3V7.7c0-2.4-1.4-4.2-3.7-4.2z"/><path d="M9.6 14.2c0-1.9 1-3.2 2.4-3.2s2.4 1.3 2.4 3.2-1 3.8-2.4 3.8-2.4-1.9-2.4-3.8z"/><path d="M10.6 7.2h.01" stroke-width="2.25"/><path d="M13.4 7.2h.01" stroke-width="2.25"/><path d="M11 9.1l1 .7 1-.7"/></symbol>
+    <symbol id="i-windows" viewBox="0 0 24 24"><path d="M4.5 5.5a1 1 0 0 1 1-1h13a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-13a1 1 0 0 1-1-1z"/><path d="M12 4.5v15"/><path d="M4.5 12h15"/></symbol>
+    <symbol id="i-power" viewBox="0 0 24 24"><path d="M12 3.5v8"/><path d="M7.2 6.8a7.5 7.5 0 1 0 9.6 0"/></symbol>
+    <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7.5h8.5"/><path d="M17.5 7.5H20"/><path d="M15 5.5a2 2 0 1 0 0 4a2 2 0 1 0 0-4"/><path d="M4 16.5h2.5"/><path d="M11.5 16.5H20"/><path d="M9 14.5a2 2 0 1 0 0 4a2 2 0 1 0 0-4"/></symbol>
+    <!-- Typographic ornament (a solid four-point fleuron, like U+2726), not an icon. -->
+    <symbol id="i-fleuron" viewBox="0 0 24 24"><path d="M12 2.5C12.8 9 15 11.2 21.5 12 15 12.8 12.8 15 12 21.5 11.2 15 9 12.8 2.5 12 9 11.2 11.2 9 12 2.5z" fill="currentColor" stroke="none"/></symbol>
+  </defs>
+</svg>
+
+<a class="skip" href="#controls">Skip to boot choice</a>
+
+<div class="page">
+  <header class="masthead bs-masthead">
+    <div class="masthead-row">
+      <p class="bs-dateline masthead-meta"><span class="masthead-pc">{{ pc_name }}</span><span aria-hidden="true"> · </span><time id="clock"></time></p>
+      <button type="button" class="icon-btn" id="open-settings" aria-label="Settings and recent events" aria-haspopup="dialog" aria-controls="settings">
+        <svg class="bs-icon" width="22" height="22"><use href="#i-sliders"/></svg>
+      </button>
+    </div>
+    <h1 class="masthead-name">Wake</h1>
+    <div class="bs-masthead-rule" role="presentation"></div>
+  </header>
+
+  <main class="front">
+    <section class="lead" aria-labelledby="status-headline">
+      <div class="lead-top">
+        <span class="bs-kicker">Status</span>
+        <span class="bs-tag bs-tag-neutral" id="status-tag"><span class="bs-tag-dot" aria-hidden="true"></span><svg class="bs-icon tag-check" width="14" height="14" aria-hidden="true"><use href="#i-check"/></svg><span id="status-tag-text">{{ status_label }}</span></span>
+      </div>
+      <div class="headline-wrap">
+        <h2 class="status-headline" id="status-headline">{{ pc_name }}</h2>
+        <div class="fleurons" aria-hidden="true">
+          <svg class="fleuron f1"><use href="#i-fleuron"/></svg>
+          <svg class="fleuron f2"><use href="#i-fleuron"/></svg>
+          <svg class="fleuron f3"><use href="#i-fleuron"/></svg>
+        </div>
+        <div class="burst" id="burst" aria-hidden="true"></div>
+      </div>
+      <p class="status-dek" id="status-dek">&nbsp;</p>
+      <ol class="wire" id="wire" aria-label="Wake progress" hidden></ol>
+      <div class="notice-slot" id="notice-slot"></div>
+      <p class="connection bs-dateline" id="connection" hidden><span class="bs-tag-dot" aria-hidden="true"></span> Reconnecting…</p>
+    </section>
+
+    <section class="controls" id="controls" aria-labelledby="boot-head">
+      <div class="bs-section-head"><h2 id="boot-head">Boot into</h2></div>
+      <div class="slips" role="radiogroup" aria-labelledby="boot-head" aria-describedby="next-note">
+        <button type="button" role="radio" class="slip" data-os="linux" aria-checked="{% if next_key == "linux" %}true{% else %}false{% endif %}" tabindex="{% if next_key == "linux" %}0{% else %}-1{% endif %}">
+          <span class="slip-stamp" aria-hidden="true">Next boot</span>
+          <svg class="bs-icon slip-icon" width="40" height="40" aria-hidden="true"><use href="#i-linux"/></svg>
+          <span class="slip-name">Linux</span>
+          <span class="slip-note" data-note-for="linux"></span>
+        </button>
+        <button type="button" role="radio" class="slip" data-os="windows" aria-checked="{% if next_key == "windows" %}true{% else %}false{% endif %}" tabindex="{% if next_key == "windows" %}0{% else %}-1{% endif %}">
+          <span class="slip-stamp" aria-hidden="true">Next boot</span>
+          <svg class="bs-icon slip-icon" width="40" height="40" aria-hidden="true"><use href="#i-windows"/></svg>
+          <span class="slip-name">Windows</span>
+          <span class="slip-note" data-note-for="windows"></span>
+        </button>
+      </div>
+
+      <div class="readout">
+        <span class="bs-kicker">Next boot</span>
+        <p class="readout-word" id="next-word" aria-live="polite"><span>{{ next_label }}</span></p>
+        <p class="readout-note" id="next-note">&nbsp;</p>
+      </div>
+
+      <button type="button" class="bs-btn bs-btn-primary wake-btn" id="wake-btn">
+        <svg class="bs-icon" width="20" height="20" aria-hidden="true"><use href="#i-power"/></svg>
+        <span id="wake-label">{{ wake_label }}</span>
+      </button>
+
+      <dl class="ledger">
+        <div class="ledger-row"><dt>Last boot</dt><dd id="last-boot">None yet</dd></div>
+        <div class="ledger-row"><dt>Last wake</dt><dd id="last-wake">None yet</dd></div>
+        <div class="ledger-row"><dt>Choice</dt><dd id="choice-expiry">Default</dd></div>
+      </dl>
+    </section>
+  </main>
+
+  <p class="visually-hidden" aria-live="assertive" id="announcer"></p>
+</div>
+
+<dialog class="sheet" id="settings" aria-labelledby="settings-title">
+  <div class="sheet-inner">
+    <div class="sheet-head">
+      <h2 id="settings-title">Settings</h2>
+      <button type="button" class="icon-btn" id="close-settings" aria-label="Close settings">
+        <svg class="bs-icon" width="22" height="22"><use href="#i-close"/></svg>
+      </button>
+    </div>
+
+    <section class="sheet-section" id="access" hidden aria-labelledby="access-head">
+      <h3 class="bs-kicker sheet-kicker" id="access-head">Access</h3>
+      <form class="unlock" id="unlock-form" novalidate>
+        <div class="bs-field" id="token-field">
+          <label class="bs-field-label" for="token-input">Wake token</label>
+          <input class="bs-field-input" id="token-input" name="token" type="password" autocomplete="current-password" aria-describedby="token-hint token-error" required>
+          <span class="bs-field-hint" id="token-hint">The WAKE_TOKEN from your stack's settings. This device stays unlocked.</span>
+          <span class="bs-field-error" id="token-error" hidden><svg class="bs-icon" width="16" height="16" aria-hidden="true"><use href="#i-alert"/></svg><span></span></span>
+        </div>
+        <button type="submit" class="bs-btn bs-btn-secondary">Unlock</button>
+      </form>
+      <div class="unlocked" id="unlocked" hidden>
+        <p class="sheet-text">This device is unlocked.</p>
+        <button type="button" class="bs-btn bs-btn-quiet" id="lock-btn">Lock this device</button>
+      </div>
+    </section>
+
+    <section class="sheet-section private" aria-labelledby="choice-head">
+      <h3 class="bs-kicker sheet-kicker" id="choice-head">Next boot</h3>
+      <p class="sheet-text" id="choice-text">&nbsp;</p>
+      <button type="button" class="bs-btn bs-btn-secondary" id="reset-btn">Reset to the default</button>
+    </section>
+
+    <section class="sheet-section private" aria-labelledby="events-head">
+      <h3 class="bs-kicker sheet-kicker" id="events-head">Recent events</h3>
+      <ol class="events" id="events"></ol>
+    </section>
+
+    <section class="sheet-section private" aria-labelledby="about-head">
+      <h3 class="bs-kicker sheet-kicker" id="about-head">About</h3>
+      <dl class="ledger ledger-compact" id="about"></dl>
+    </section>
+  </div>
+</dialog>
+
+<script type="application/json" id="initial">{{ initial_json|safe }}</script>
+</body>
+</html>

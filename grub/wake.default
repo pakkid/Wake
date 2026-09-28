@@ -1,0 +1,32 @@
+# /etc/default/wake: settings for /etc/grub.d/06_wake.
+# After editing, regenerate GRUB's config:
+#   sudo grub-mkconfig -o /boot/grub/grub.cfg
+
+# The machine running the Wake container, and its GRUB_PROTOCOL_PORT.
+# An IPv4 address: GRUB may have no DNS during boot.
+WAKE_SERVER="192.168.1.10"
+WAKE_PORT="8081"
+
+# The menu entries to boot, as an entry id (preferred) or its exact title.
+# List them with:  grep -E "^\s*menuentry" /boot/grub/grub.cfg
+WAKE_LINUX_ENTRY="gnulinux-simple-00000000-0000-0000-0000-000000000000"
+WAKE_WINDOWS_ENTRY="Windows Boot Manager"
+
+# How GRUB gets an address.
+#   dhcp:   ask the router (adds about 1-3 s to every boot).
+#   static: use WAKE_STATIC_IP directly (no DHCP wait). Pick an address
+#           outside the DHCP pool, or the PC's own reserved address.
+WAKE_NET="dhcp"
+WAKE_STATIC_IP=""
+# Only needed when the Wake server is on a different subnet.
+WAKE_STATIC_GW=""
+
+# Which firmware network card to use: efinet0, efinet1, ...
+# Empty means every card with DHCP (slower if some are unplugged); static
+# mode defaults to efinet0. Find the name with `net_ls_cards` in the GRUB shell.
+WAKE_NET_CARD=""
+
+# yes: only ask Wake when the firmware reports a LAN wake (SMBIOS wake-up
+# type 6), so normal power-button boots skip the network entirely.
+# Some firmware misreports this; test before relying on it.
+WAKE_ONLY_ON_LAN_WAKE="no"

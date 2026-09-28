@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" fill="#eeeae3"/>
+  <text x="256" y="330" text-anchor="middle" font-family="Newsreader 16pt" font-weight="600" font-size="320" letter-spacing="-8" fill="#14271c">W</text>
+  <rect x="96" y="368" width="320" height="12" fill="#14271c"/>
+  <rect x="96" y="390" width="320" height="3" fill="#14271c"/>
+  <path d="M410 62C412.8 84 420 91.2 442 94 420 96.8 412.8 104 410 126 407.2 104 400 96.8 378 94 400 91.2 407.2 84 410 62z" fill="#7bae71"/>
+</svg>

@@ -1,0 +1,135 @@
+#!/bin/sh
+# Wake: one-shot boot selection for GRUB.
+#
+# Installed as /etc/grub.d/06_wake. grub-mkconfig runs it and pastes its output
+# into grub.cfg, so the integration survives every `grub-mkconfig` and every
+# package update. Settings live in /etc/default/wake.
+#
+# At boot the generated script:
+#   1. sets the default entry to Linux,
+#   2. brings up the network with the firmware's UEFI driver (efinet),
+#   3. reads `wake_boot` from http://WAKE_SERVER:WAKE_PORT/grub/boot.env
+#      (a GRUB environment block) with `load_env`, whitelisting only that name,
+#   4. switches the default to Windows only if wake_boot is exactly 1.
+# Anything else (no network, server down, timeout, garbage) leaves Linux.
+set -e
+
+WAKE_CONFIG="${WAKE_CONFIG:-/etc/default/wake}"
+
+if [ ! -r "$WAKE_CONFIG" ]; then
+  echo "06_wake: $WAKE_CONFIG not found, so the Wake integration is skipped" >&2
+  exit 0
+fi
+
+# shellcheck source=/dev/null
+. "$WAKE_CONFIG"
+
+WAKE_PORT="${WAKE_PORT:-8081}"
+WAKE_NET="${WAKE_NET:-dhcp}"
+WAKE_NET_CARD="${WAKE_NET_CARD:-}"
+WAKE_ONLY_ON_LAN_WAKE="${WAKE_ONLY_ON_LAN_WAKE:-no}"
+
+fail() {
+  echo "06_wake: $*" >&2
+  echo "06_wake: fix $WAKE_CONFIG; grub.cfg has not been changed." >&2
+  exit 1
+}
+
+is_ipv4() {
+  echo "$1" | grep -Eq '^([0-9]{1,3}\.){3}[0-9]{1,3}$' || return 1
+  for octet in $(echo "$1" | tr '.' ' '); do
+    [ "$octet" -le 255 ] || return 1
+  done
+}
+
+# Entry names go inside double quotes in grub.cfg; refuse anything that could
+# break out of them.
+safe_entry() {
+  case "$1" in
+    "" | *'"'* | *'\'* | *'$'* | *'`'*) return 1 ;;
+  esac
+  [ "$(printf '%s' "$1" | wc -l)" -eq 0 ]
+}
+
+[ -n "${WAKE_SERVER:-}" ] || fail "WAKE_SERVER is not set"
+is_ipv4 "$WAKE_SERVER" || fail "WAKE_SERVER='$WAKE_SERVER' must be an IPv4 address (GRUB may have no DNS at boot)"
+echo "$WAKE_PORT" | grep -Eq '^[0-9]{1,5}$' && [ "$WAKE_PORT" -ge 1 ] && [ "$WAKE_PORT" -le 65535 ] \
+  || fail "WAKE_PORT='$WAKE_PORT' is not a port number"
+safe_entry "${WAKE_LINUX_ENTRY:-}" || fail "WAKE_LINUX_ENTRY is empty or contains \" \\ \$ or \`"
+safe_entry "${WAKE_WINDOWS_ENTRY:-}" || fail "WAKE_WINDOWS_ENTRY is empty or contains \" \\ \$ or \`"
+echo "$WAKE_NET_CARD" | grep -Eq '^[A-Za-z0-9_]*$' \
+  || fail "WAKE_NET_CARD='$WAKE_NET_CARD' is not a card name like efinet0"
+
+case "$WAKE_NET" in
+  dhcp)
+    net_up="net_dhcp${WAKE_NET_CARD:+ $WAKE_NET_CARD}"
+    ;;
+  static)
+    [ -n "${WAKE_STATIC_IP:-}" ] || fail "WAKE_NET=static needs WAKE_STATIC_IP"
+    is_ipv4 "$WAKE_STATIC_IP" || fail "WAKE_STATIC_IP='$WAKE_STATIC_IP' must be an IPv4 address"
+    card="${WAKE_NET_CARD:-efinet0}"
+    net_up="net_add_addr wake $card $WAKE_STATIC_IP"
+    if [ -n "${WAKE_STATIC_GW:-}" ]; then
+      is_ipv4 "$WAKE_STATIC_GW" || fail "WAKE_STATIC_GW='$WAKE_STATIC_GW' must be an IPv4 address"
+    fi
+    ;;
+  *) fail "WAKE_NET='$WAKE_NET' must be dhcp or static" ;;
+esac
+
+case "$WAKE_ONLY_ON_LAN_WAKE" in
+  yes | no) ;;
+  *) fail "WAKE_ONLY_ON_LAN_WAKE='$WAKE_ONLY_ON_LAN_WAKE' must be yes or no" ;;
+esac
+
+server="$WAKE_SERVER:$WAKE_PORT"
+
+cat <<EOF
+### Wake: one-shot boot choice from http://$server/grub/boot.env ###
+# Linux unless the Wake server says wake_boot=1. See /etc/default/wake.
+set wake_boot=0
+set default="$WAKE_LINUX_ENTRY"
+if [ "\${grub_platform}" = "efi" ]; then
+  set wake_ask=1
+EOF
+
+if [ "$WAKE_ONLY_ON_LAN_WAKE" = "yes" ]; then
+  cat <<'EOF'
+  # Only ask when the firmware says a network packet woke the PC
+  # (SMBIOS type 1, offset 0x18, wake-up type 6 = LAN remote).
+  insmod smbios
+  if smbios --type 1 --get-byte 24 --set wake_type; then
+    if [ "${wake_type}" != "6" ]; then set wake_ask=0; fi
+  fi
+EOF
+fi
+
+cat <<EOF
+  if [ "\${wake_ask}" = "1" ]; then
+    insmod efinet
+    insmod http
+    insmod loadenv
+    echo "Wake: asking $server for the next boot..."
+    set wake_net=0
+    if $net_up; then set wake_net=1; fi
+EOF
+
+if [ "$WAKE_NET" = "static" ] && [ -n "${WAKE_STATIC_GW:-}" ]; then
+  cat <<EOF
+    if [ "\${wake_net}" = "1" ]; then net_add_route wake_default 0.0.0.0/0 gw $WAKE_STATIC_GW; fi
+EOF
+fi
+
+cat <<EOF
+    if [ "\${wake_net}" = "1" ]; then
+      load_env --skip-sig --file (http,$server)/grub/boot.env wake_boot
+    fi
+  fi
+fi
+if [ "\${wake_boot}" = "1" ]; then
+  set default="$WAKE_WINDOWS_ENTRY"
+  echo "Wake: booting Windows this time."
+else
+  set wake_boot=0
+fi
+### end Wake ###
+EOF

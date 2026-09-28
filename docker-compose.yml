@@ -1,0 +1,49 @@
+# Wake: deploy as a Portainer stack or with `docker compose up -d`.
+#
+# Host networking is required:
+#   - Wake-on-LAN is a UDP *broadcast*. From Docker's default bridge network a
+#     broadcast only reaches the docker0 bridge, never your LAN.
+#   - The GRUB port needs to see the PC's real IP address (for the allowlist
+#     and to recognise repeat requests); bridge NAT would hide it.
+# With host networking `ports:` is ignored; Wake listens directly on the host's
+# WEB_PORT and GRUB_PROTOCOL_PORT.
+
+services:
+  wake:
+    build: .
+    image: wake:latest
+    container_name: wake
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      PC_NAME: ${PC_NAME:-My PC}
+      PC_MAC: ${PC_MAC:?Set PC_MAC to the PC's network card MAC address}
+      PC_IP: ${PC_IP:-}
+      WOL_BROADCAST: ${WOL_BROADCAST:-255.255.255.255}
+      WOL_PORT: ${WOL_PORT:-9}
+      WEB_PORT: ${WEB_PORT:-8080}
+      GRUB_PROTOCOL_PORT: ${GRUB_PROTOCOL_PORT:-8081}
+      BIND_ADDR: ${BIND_ADDR:-0.0.0.0}
+      DEFAULT_BOOT: ${DEFAULT_BOOT:-linux}
+      BOOT_CHOICE_TTL: ${BOOT_CHOICE_TTL:-6h}
+      GRUB_REPEAT_WINDOW: ${GRUB_REPEAT_WINDOW:-60s}
+      GRUB_ALLOWED_IPS: ${GRUB_ALLOWED_IPS:-}
+      PROBE: ${PROBE:-icmp,tcp:22,tcp:3389,tcp:445}
+      PROBE_INTERVAL: ${PROBE_INTERVAL:-5s}
+      WAKE_TIMEOUT: ${WAKE_TIMEOUT:-3m}
+      WAKE_TOKEN: ${WAKE_TOKEN:-}
+      RUST_LOG: ${RUST_LOG:-info}
+    volumes:
+      - wake-data:/data
+    # The binary carries a file capability (cap_net_raw) for ICMP probes.
+    # Don't add `cap_drop: [NET_RAW]`: the kernel then refuses to start it.
+    # (`no-new-privileges:true` is fine but disables raw ICMP; Wake falls back
+    # to unprivileged ping sockets if the host allows them, else skips icmp.)
+    logging:
+      driver: json-file
+      options:
+        max-size: "1m"
+        max-file: "3"
+
+volumes:
+  wake-data:
