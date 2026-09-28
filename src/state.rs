@@ -215,6 +215,9 @@ pub struct BootService {
     settings: BootSettings,
     revision: Revision,
     storage_ok: AtomicBool,
+    /// The last refused GRUB request we logged, so a retrying GRUB doesn't
+    /// flood the event list.
+    last_refused: std::sync::Mutex<Option<(IpAddr, Millis)>>,
 }
 
 fn millis(d: Duration) -> Millis {
@@ -233,6 +236,7 @@ impl BootService {
             settings,
             revision,
             storage_ok: AtomicBool::new(true),
+            last_refused: std::sync::Mutex::new(None),
         }
     }
 
@@ -283,6 +287,7 @@ impl BootService {
             settings,
             revision,
             storage_ok: AtomicBool::new(storage_ok),
+            last_refused: std::sync::Mutex::new(None),
         };
         {
             let guard = svc.state.lock().await;
@@ -438,6 +443,33 @@ impl BootService {
             error: result.err(),
         });
         self.commit(&s).await;
+    }
+
+    /// Records a GRUB request refused by the allowlist, at most once a minute
+    /// per address. Returns true if it was logged.
+    pub async fn note_refused_at(&self, ip: IpAddr, now: Millis) -> bool {
+        {
+            let mut last = self.last_refused.lock().expect("refused lock");
+            if let Some((prev, at)) = *last
+                && prev == ip
+                && now >= at
+                && now - at < 60_000
+            {
+                return false;
+            }
+            *last = Some((ip, now));
+        }
+        self.log_at(
+            EventKind::Warning,
+            format!(
+                "GRUB asked from {ip}, which isn't allowed, so it booted its default. \
+                 Add {ip} to GRUB_ALLOWED_IPS, or give GRUB the PC's usual address \
+                 (WAKE_NET=static)."
+            ),
+            now,
+        )
+        .await;
+        true
     }
 
     pub async fn log_at(&self, kind: EventKind, message: impl Into<String>, now: Millis) {

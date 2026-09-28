@@ -158,6 +158,9 @@ pub async fn handle(raw: &[u8], peer: IpAddr, ctx: &GrubContext) -> Vec<u8> {
     };
     if !ctx.allowed.allows(peer) {
         tracing::warn!(%peer, path, "GRUB request from an address not in GRUB_ALLOWED_IPS");
+        if path == BOOT_PATH {
+            ctx.boot.note_refused_at(peer, now_ms()).await;
+        }
         return text(
             "403 Forbidden",
             "This address may not ask for a boot choice.",

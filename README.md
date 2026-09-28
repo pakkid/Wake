@@ -431,6 +431,7 @@ Press `c` at the GRUB menu and try the commands in §11 step by step.
 | `error: couldn't resolve hardware address` / time-out | The Wake host is off, or on another subnet without a gateway. For static mode across subnets, set `WAKE_STATIC_GW`. |
 | `error: connection refused` / `time out opening` | The container isn't running, the port is wrong, or the host firewall blocks it |
 | `error: file '/grub/boot.env' not found` | Wake answered 404 or 403. Check the path and `GRUB_ALLOWED_IPS`. |
+| Boots the default instantly; Recent events says "GRUB asked from … which isn't allowed" | With DHCP, the firmware got a different IP than the OS does. This is common when the firmware and the OS present different MACs, or send a different DHCP client ID. Fix it with `WAKE_NET=static` and `WAKE_STATIC_IP=<the PC's usual IP>`, or add that IP to `GRUB_ALLOWED_IPS`. |
 | `error: invalid environment block` | Something other than Wake answered on that port (a proxy?) |
 | Boot is slower | DHCP runs on every boot (about 1–3 s). Use static mode, or `WAKE_ONLY_ON_LAN_WAKE=yes`. |
 | Windows entry not found | `WAKE_WINDOWS_ENTRY` must match a menu entry id or title exactly. List them with: `grep -E "^\s*menuentry" /boot/grub/grub.cfg` |

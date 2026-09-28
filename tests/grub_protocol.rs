@@ -143,6 +143,15 @@ async fn allowlist_blocks_other_hosts_without_consuming() {
         boot.snapshot_at(wake::now_ms()).await.next_boot.explicit,
         "choice still waiting"
     );
+    // The refusal shows up in the UI's event list, once, not per retry.
+    raw(addr, &grub_get(addr, "/grub/boot.env")).await;
+    let events = boot.snapshot_at(wake::now_ms()).await.events;
+    let refused: Vec<_> = events
+        .iter()
+        .filter(|e| e.message.contains("isn't allowed"))
+        .collect();
+    assert_eq!(refused.len(), 1);
+    assert!(refused[0].message.contains("127.0.0.1"));
 }
 
 #[tokio::test]
