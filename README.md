@@ -1,8 +1,8 @@
 # Wake
 
-A tiny home-lab appliance for a dual-boot PC. From your phone, pick **Linux** or **Windows** and tap **Wake**. Wake sends a Wake-on-LAN magic packet. While the PC boots, GRUB asks Wake which system to start, boots it once, and then goes back to Linux.
+A tiny home-lab appliance for a dual-boot PC. From your phone, pick **Linux** or **Windows** and tap **Wake**. Wake sends a Wake-on-LAN magic packet. While the PC boots, GRUB asks Wake which system to start, boots it once, and then goes back to your default.
 
-If Wake can't be reached for any reason (container down, network down, timeout, garbage reply), GRUB boots Linux as it normally would.
+The default is Linux unless you set it to Windows (`DEFAULT_BOOT` on the server, `WAKE_DEFAULT` on the PC). If Wake can't be reached for any reason (container down, network down, timeout, garbage reply), GRUB boots the default as it normally would.
 
 One Rust binary, one container, one small volume. It has no database, no queue and no cloud.
 
@@ -52,8 +52,8 @@ Also: [API](#api) · [Tests](#tests) · [Project layout](#project-layout)
                                                                                     │
  PC: power on ─▶ UEFI ─▶ GRUB ─▶ efinet + net_dhcp ─▶ load_env (http,SERVER:8081)/grub/boot.env
                                   │
-                                  ├─ wake_boot=1  ─▶ chainload Windows Boot Manager
-                                  └─ anything else ─▶ Linux (the default)
+                                  ├─ wake_boot = the other OS's value ─▶ that OS, once
+                                  └─ anything else ─▶ WAKE_DEFAULT (Linux unless set to Windows)
 ```
 
 ### Why GRUB talks HTTP and reads an "environment block"
@@ -96,7 +96,7 @@ wake_boot=1
 | Errors | `404` other paths, `405` non-GET, `400` malformed, `431` headers over 4 KiB, `403` source IP not in `GRUB_ALLOWED_IPS` |
 | Server timeouts | 5 s to receive the request; at most 32 connections at once |
 | GRUB timeouts | TCP connect about 16 s (a whole boot with Wake stopped took 19 s in QEMU); ARP for a host that's off about 16 s; DHCP with no DHCP server can take tens of seconds |
-| Failure | Any failure leaves `wake_boot=0`: GRUB boots Linux after its normal menu timeout |
+| Failure | Any failure leaves `wake_boot` at the default's value: GRUB boots `WAKE_DEFAULT` after its normal menu timeout |
 
 ## 3. Requirements
 
@@ -104,7 +104,7 @@ wake_boot=1
   - Arch Linux + Windows, booting x86_64 **UEFI** GRUB 2. Written against GRUB 2.14; the `(http,IP:PORT)` port syntax needs a recent GRUB.
   - A wired Ethernet NIC that supports Wake-on-LAN.
   - In the firmware setup:
-    - **UEFI network stack enabled.** The option is usually called "Network Stack", "IPv4 PXE Support" or "UEFI Network". Without it GRUB sees no network card; the PC still boots Linux, but Wake can't choose.
+    - **UEFI network stack enabled.** The option is usually called "Network Stack", "IPv4 PXE Support" or "UEFI Network". Without it GRUB sees no network card; the PC still boots the default, but Wake can't choose.
     - **Network boot may also need to be in the boot order**, *after* your disk. Much firmware only starts drivers for devices in the boot list. The QEMU test shows exactly this: with the NIC out of the boot order, GRUB reports `no network card found`; with it listed after the disk, everything works. The disk still boots first, so this doesn't slow anything down.
     - Wake-on-LAN / "Power On by PCI-E" enabled, and ErP / deep sleep disabled.
 - **The server:** any always-on Linux machine on the **same LAN** with Docker (Portainer optional).
@@ -178,9 +178,9 @@ All settings are environment variables. Empty values count as unset.
 | `WEB_PORT` | `8080` | Web UI and API |
 | `GRUB_PROTOCOL_PORT` | `8081` | The GRUB responder |
 | `BIND_ADDR` | `0.0.0.0` | Listen address for both ports |
-| `DEFAULT_BOOT` | `linux` | What GRUB is told when nothing is chosen (`linux` or `windows`). GRUB's own fallback when Wake is unreachable is always Linux. |
+| `DEFAULT_BOOT` | `linux` | What GRUB is told when nothing is chosen (`linux` or `windows`). Set the PC's `WAKE_DEFAULT` (in `/etc/default/wake`) to the same value; that one decides what boots when Wake can't be reached. |
 | `BOOT_CHOICE_TTL` | `6h` | An unused choice expires after this. `0` means never. |
-| `GRUB_REPEAT_WINDOW` | `60s` | Repeat requests from the same IP within this window get the same answer (max 10 min) |
+| `GRUB_REPEAT_WINDOW` | `15s` | Repeat requests from the same IP within this window get the same answer, unless a new choice was made since (max 10 min) |
 | `GRUB_ALLOWED_IPS` | `PC_IP` | Comma-separated IPs allowed to ask, or `any`. Empty with no `PC_IP` means any. |
 | `PROBE` | `icmp,tcp:22,tcp:3389,tcp:445` | How to tell the PC is on. Any answer counts, and a *refused* TCP connection counts too, because the host answered. |
 | `PROBE_INTERVAL` | `5s` | How often to check (every 2 s while waking) |
@@ -287,7 +287,7 @@ sudo ./grub/uninstall.sh
 
 ```text
 set wake_boot=0
-set default="gnulinux-linux-advanced-…"          # Linux, explicitly
+set default="gnulinux-linux-advanced-…"          # the default (here WAKE_DEFAULT=linux), explicitly
 if [ "${grub_platform}" = "efi" ]; then
   set wake_ask=1
   if [ "${wake_ask}" = "1" ]; then
@@ -314,6 +314,7 @@ fi
 
 - `WAKE_NET=static` with `WAKE_STATIC_IP=…` skips DHCP. That saves about 1–3 s on *every* boot, and avoids a long wait if the router is down.
 - `WAKE_NET_CARD=efinet0` pins one card if the PC has several.
+- `WAKE_DEFAULT=windows` makes Windows the default: it boots unless Wake explicitly says Linux (`wake_boot=0`), including when Wake can't be reached. Set the server's `DEFAULT_BOOT=windows` to match.
 - `WAKE_ONLY_ON_LAN_WAKE=yes` makes GRUB ask only when the firmware reports a LAN wake (SMBIOS wake-up type 6), so power-button boots skip the network entirely. Some firmware misreports this, so test it first.
 - Wake always sets GRUB's `default`, so it overrides `grub-reboot`.
 
@@ -344,8 +345,8 @@ With **Secure Boot**, GRUB may refuse to load modules that aren't built into its
    curl -s http://SERVER:8081/grub/preview.env | head -2
    ```
 2. With nothing chosen, reboot the PC. You should see `Wake: asking … for the next boot...` briefly, then Linux. The web page's "Last boot" shows `Linux`, and the event log says "Nothing was waiting".
-3. **Fallback test:** stop the container (`docker stop wake`) and reboot. GRUB waits up to about 16 s, then boots Linux. Start the container again.
-4. **No-network test:** unplug the cable and reboot. GRUB boots Linux after DHCP gives up.
+3. **Fallback test:** stop the container (`docker stop wake`) and reboot. GRUB waits up to about 16 s, then boots the default (`WAKE_DEFAULT`). Start the container again.
+4. **No-network test:** unplug the cable and reboot. GRUB boots the default after DHCP gives up.
 
 **By hand in the GRUB shell:** press `c` at the menu, then:
 
@@ -366,7 +367,9 @@ echo $wake_boot
 curl -X POST http://SERVER:8080/api/boot/windows
 ```
 
-Then reboot the PC (or shut it down and `curl -X POST http://SERVER:8080/api/wake`). GRUB prints `Wake: booting Windows this time.`, the menu highlights Windows, and it boots when the menu timeout ends. The page shows **Booting**, then **Awake**, and "Next boot" returns to Linux.
+Then reboot the PC (or shut it down and `curl -X POST http://SERVER:8080/api/wake`). GRUB prints `Wake: booting Windows this time.`, the menu highlights Windows, and it boots when the menu timeout ends. The page shows **Booting**, then **Awake**, and "Next boot" returns to the default.
+
+With `WAKE_DEFAULT=windows` it's the mirror image: nothing chosen boots Windows, and choosing Linux prints `Wake: booting Linux this time.`
 
 Reboot Windows normally and you'll land in Linux: the choice was one-shot.
 
@@ -374,10 +377,11 @@ Reboot Windows normally and you'll land in Linux: the choice was one-shot.
 
 - **Picking an OS** stores `next_boot = {os, set_at, expires_at}` and writes it to disk right away.
 - **The first `GET /grub/boot.env` uses it up.** Under a single lock, Wake takes the choice (or the default), records `last_boot = {os, time, ip}`, and **saves that to disk before replying**. A crash can't hand out the same choice twice.
-- **Repeats inside one boot get the same answer.** GRUB's network file layer reopens the connection when a reader seeks backwards, and `load_env`'s file open does exactly that, so one boot can send several GETs, some with `Range:`. Requests from the **same IP** within `GRUB_REPEAT_WINDOW` (60 s) get the same OS. A request from another IP after the choice is used gets the default.
-- **The next real boot gets Linux.** A reboot takes much longer than 60 s from GRUB back to GRUB. That includes Windows Update restarts, which land in Linux: that's the one-shot rule working, not a bug. Pick Windows again if an update needs several restarts.
+- **Repeats inside one boot get the same answer.** GRUB's network file layer reopens the connection when a reader seeks backwards, and `load_env`'s file open does exactly that, so one boot can send several GETs, some with `Range:`. Requests from the **same IP** within `GRUB_REPEAT_WINDOW` (15 s) get the same OS. A request from another IP after the choice is used gets the default.
+- **A choice made after GRUB asked is always for the next boot.** If you pick something new, the next request uses it even inside the repeat window, so a quick reboot never replays the old answer.
+- **The next real boot gets the default.** With a Linux default, Windows Update restarts land in Linux: that's the one-shot rule working, not a bug. Pick Windows again if an update needs several restarts. With `WAKE_DEFAULT=windows` / `DEFAULT_BOOT=windows`, it's the other way round.
 - **Expiry.** An unused choice expires after `BOOT_CHOICE_TTL` (6 h), so a forgotten Windows pick doesn't surprise you next week.
-- **Restarts.** The choice, the last answer and the repeat window all survive a Wake or Docker restart (`/data/state.json`, written atomically). A corrupt state file is moved to `state.json.corrupt-<time>`, and Wake starts fresh with Linux and logs a warning in the UI.
+- **Restarts.** The choice, the last answer and the repeat window all survive a Wake or Docker restart (`/data/state.json`, written atomically). A corrupt state file is moved to `state.json.corrupt-<time>`, and Wake starts fresh with the default and logs a warning in the UI.
 - **Concurrency.** Simultaneous requests are serialised by the lock. The test suite fires 100 concurrent GRUB requests from different IPs, and exactly one gets Windows.
 
 ## 14. Troubleshooting Wake-on-LAN
@@ -530,6 +534,8 @@ cargo test
   | No network card | Linux | pass, 3 s |
   | Server replies `1`, `wake_boot=banana`, or a block that sets `default=` | Linux (`load_env` whitelist) | pass |
   | Wake not running | Linux | pass, 19 s (GRUB's ~16 s connect timeout) |
+  | `WAKE_DEFAULT=windows`: nothing chosen / Linux chosen | Windows / Linux (choice used up) | pass |
+  | `WAKE_DEFAULT=windows`: Wake down, no NIC, garbage reply | Windows | pass |
 
   In these runs GRUB made one request per boot. The repeat window is there in case other firmware or GRUB builds reopen the file.
 - **Manual GRUB tests**, which need your real firmware: §11 and §12.

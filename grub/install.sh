@@ -85,6 +85,8 @@ else
   linux_entry="$(ask "Linux menu entry (id or exact title)" "$linux_entry")"
   windows_entry="$(ask "Windows menu entry (id or exact title)" "$windows_entry")"
   [ -n "$linux_entry" ] && [ -n "$windows_entry" ] || die "both menu entries are needed"
+  default_os="$(ask "Boot which OS when Wake has no choice or can't be reached? (linux/windows)" "${WAKE_DEFAULT:-linux}")"
+  case "$default_os" in linux | windows) ;; *) die "answer linux or windows" ;; esac
 
   tmp="$(mktemp)"
   trap 'rm -f "$tmp"' EXIT
@@ -93,6 +95,7 @@ else
     -e "s|^WAKE_PORT=.*|WAKE_PORT=\"$port\"|" \
     -e "s|^WAKE_LINUX_ENTRY=.*|WAKE_LINUX_ENTRY=\"$linux_entry\"|" \
     -e "s|^WAKE_WINDOWS_ENTRY=.*|WAKE_WINDOWS_ENTRY=\"$windows_entry\"|" \
+    -e "s|^WAKE_DEFAULT=.*|WAKE_DEFAULT=\"$default_os\"|" \
     "$HERE/wake.default" > "$tmp"
   say ""
   say "This will be written to $CONFIG:"
@@ -122,5 +125,6 @@ say "Done. Next steps:"
 say "  1. Make sure the firmware's UEFI network stack is enabled (BIOS: 'Network Stack' / 'IPv4 PXE Support'),"
 say "     and that network (PXE) boot is in the boot order after the disk: many boards only start the"
 say "     NIC driver for devices in that list."
-say "  2. Reboot and watch for 'Wake: asking $(. "$CONFIG"; echo "$WAKE_SERVER:${WAKE_PORT:-8081}") for the next boot...'"
-say "  3. To undo: sudo $HERE/uninstall.sh"
+say "  2. Set the server's DEFAULT_BOOT to '$(. "$CONFIG"; echo "${WAKE_DEFAULT:-linux}")' so both sides agree."
+say "  3. Reboot and watch for 'Wake: asking $(. "$CONFIG"; echo "$WAKE_SERVER:${WAKE_PORT:-8081}") for the next boot...'"
+say "  4. To undo: sudo $HERE/uninstall.sh"

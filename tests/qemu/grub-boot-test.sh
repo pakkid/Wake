@@ -45,6 +45,7 @@ start_wake() {
   PC_NAME="QEMU" PC_MAC=52:54:00:12:34:56 WOL_BROADCAST=127.0.0.1 WOL_PORT=40009 \
     WEB_PORT=$WEB_PORT GRUB_PROTOCOL_PORT=$GRUB_PORT BIND_ADDR=127.0.0.1 \
     GRUB_ALLOWED_IPS=any DATA_DIR="$WORK/data" RUST_LOG=info,wake=debug \
+    DEFAULT_BOOT="${SERVER_DEFAULT:-linux}" \
     "$ROOT/target/release/wake" >"$WORK/wake.log" 2>&1 &
   WAKE_PID=$!
   for _ in $(seq 50); do
@@ -256,10 +257,34 @@ scenario_junk() {
   stop_junk
 }
 
+scenario_windows_default() {
+  log "WAKE_DEFAULT=windows: Windows unless Wake explicitly says Linux"
+  SERVER_DEFAULT=windows start_wake
+  write_config $GRUB_PORT 'WAKE_DEFAULT="windows"'
+  build_efi
+  expect win-default-nothing windows "$(boot net)"
+  api /api/boot/linux
+  expect win-default-linux-chosen linux "$(boot net)"
+  consumed=$(status_field "d['next_boot']['explicit']")
+  if [ "$consumed" = "False" ]; then
+    PASS=$((PASS + 1)); echo "  PASS  linux choice consumed"
+  else
+    FAIL=$((FAIL + 1)); echo "  FAIL  linux choice consumed        explicit=$consumed"
+  fi
+  stop_wake
+  expect win-default-server-down windows "$(boot net)"
+  expect win-default-no-nic windows "$(boot none)"
+  write_config $JUNK_PORT 'WAKE_DEFAULT="windows"'
+  build_efi
+  start_junk '# GRUB Environment Block\nwake_boot=banana\n'
+  expect win-default-junk windows "$(boot net)"
+  stop_junk
+}
+
 build_wake
 echo "accel=$accel, work dir $WORK"
 if [ $# -eq 0 ]; then
-  set -- windows linux_default linux_chosen static no_nic junk server_down
+  set -- windows linux_default linux_chosen static no_nic junk windows_default server_down
 fi
 for s in "$@"; do "scenario_$s"; done
 

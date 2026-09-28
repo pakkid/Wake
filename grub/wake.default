@@ -12,6 +12,11 @@ WAKE_PORT="8081"
 WAKE_LINUX_ENTRY="gnulinux-simple-00000000-0000-0000-0000-000000000000"
 WAKE_WINDOWS_ENTRY="Windows Boot Manager"
 
+# What boots unless Wake explicitly asks for the other OS: also what boots
+# when Wake can't be reached. linux or windows. Set the server's
+# DEFAULT_BOOT to the same value.
+WAKE_DEFAULT="linux"
+
 # How GRUB gets an address.
 #   dhcp:   ask the router (adds about 1-3 s to every boot).
 #   static: use WAKE_STATIC_IP directly (no DHCP wait). Pick an address

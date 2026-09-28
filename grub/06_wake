@@ -6,12 +6,13 @@
 # package update. Settings live in /etc/default/wake.
 #
 # At boot the generated script:
-#   1. sets the default entry to Linux,
+#   1. sets the default entry to WAKE_DEFAULT (Linux unless configured),
 #   2. brings up the network with the firmware's UEFI driver (efinet),
 #   3. reads `wake_boot` from http://WAKE_SERVER:WAKE_PORT/grub/boot.env
 #      (a GRUB environment block) with `load_env`, whitelisting only that name,
-#   4. switches the default to Windows only if wake_boot is exactly 1.
-# Anything else (no network, server down, timeout, garbage) leaves Linux.
+#   4. switches to the other OS only if wake_boot is exactly its value
+#      (0 = Linux, 1 = Windows).
+# Anything else (no network, server down, timeout, garbage) keeps the default.
 set -e
 
 WAKE_CONFIG="${WAKE_CONFIG:-/etc/default/wake}"
@@ -28,6 +29,7 @@ WAKE_PORT="${WAKE_PORT:-8081}"
 WAKE_NET="${WAKE_NET:-dhcp}"
 WAKE_NET_CARD="${WAKE_NET_CARD:-}"
 WAKE_ONLY_ON_LAN_WAKE="${WAKE_ONLY_ON_LAN_WAKE:-no}"
+WAKE_DEFAULT="${WAKE_DEFAULT:-linux}"
 
 fail() {
   echo "06_wake: $*" >&2
@@ -81,13 +83,26 @@ case "$WAKE_ONLY_ON_LAN_WAKE" in
   *) fail "WAKE_ONLY_ON_LAN_WAKE='$WAKE_ONLY_ON_LAN_WAKE' must be yes or no" ;;
 esac
 
+# The default boots unless Wake explicitly asks for the other one.
+case "$WAKE_DEFAULT" in
+  linux)
+    default_value=0 default_entry="$WAKE_LINUX_ENTRY" default_label=Linux
+    other_value=1 other_entry="$WAKE_WINDOWS_ENTRY" other_label=Windows
+    ;;
+  windows)
+    default_value=1 default_entry="$WAKE_WINDOWS_ENTRY" default_label=Windows
+    other_value=0 other_entry="$WAKE_LINUX_ENTRY" other_label=Linux
+    ;;
+  *) fail "WAKE_DEFAULT='$WAKE_DEFAULT' must be linux or windows" ;;
+esac
+
 server="$WAKE_SERVER:$WAKE_PORT"
 
 cat <<EOF
 ### Wake: one-shot boot choice from http://$server/grub/boot.env ###
-# Linux unless the Wake server says wake_boot=1. See /etc/default/wake.
-set wake_boot=0
-set default="$WAKE_LINUX_ENTRY"
+# $default_label unless the Wake server says wake_boot=$other_value. See /etc/default/wake.
+set wake_boot=$default_value
+set default="$default_entry"
 if [ "\${grub_platform}" = "efi" ]; then
   set wake_ask=1
 EOF
@@ -125,11 +140,11 @@ cat <<EOF
     fi
   fi
 fi
-if [ "\${wake_boot}" = "1" ]; then
-  set default="$WAKE_WINDOWS_ENTRY"
-  echo "Wake: booting Windows this time."
+if [ "\${wake_boot}" = "$other_value" ]; then
+  set default="$other_entry"
+  echo "Wake: booting $other_label this time."
 else
-  set wake_boot=0
+  set wake_boot=$default_value
 fi
 ### end Wake ###
 EOF

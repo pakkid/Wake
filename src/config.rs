@@ -136,7 +136,7 @@ impl Config {
         let default_boot: Os = env.parse("DEFAULT_BOOT", Os::Linux)?;
 
         let ttl = env.duration("BOOT_CHOICE_TTL", Duration::from_secs(6 * 3600))?;
-        let repeat = env.duration("GRUB_REPEAT_WINDOW", Duration::from_secs(60))?;
+        let repeat = env.duration("GRUB_REPEAT_WINDOW", Duration::from_secs(15))?;
         if repeat > Duration::from_secs(600) {
             return Err(Env::invalid(
                 "GRUB_REPEAT_WINDOW",
@@ -254,7 +254,7 @@ mod tests {
         assert_eq!(c.grub_port, 8081);
         assert_eq!(c.default_boot, Os::Linux);
         assert_eq!(c.boot_choice_ttl, Some(Duration::from_secs(6 * 3600)));
-        assert_eq!(c.grub_repeat_window, Duration::from_secs(60));
+        assert_eq!(c.grub_repeat_window, Duration::from_secs(15));
         assert_eq!(c.grub_allowed, AllowList::Any);
         assert_eq!(c.probes.len(), 4);
         assert_eq!(c.wake_token, None);

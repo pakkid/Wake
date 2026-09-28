@@ -8,7 +8,8 @@
 //! its network file layer reopens the connection whenever a reader seeks
 //! backwards (the decompression sniff in `grub_file_open` does exactly that).
 //! So the first request consumes the choice, and further requests from the same
-//! IP inside `repeat_window` get the same answer instead of the default.
+//! IP inside `repeat_window` get the same answer instead of the default, unless
+//! a new choice was made since, which is always meant for the next boot.
 
 use std::collections::VecDeque;
 use std::fmt;
@@ -176,7 +177,7 @@ impl Default for BootSettings {
         Self {
             default: Os::Linux,
             ttl: Some(Duration::from_secs(6 * 3600)),
-            repeat_window: Duration::from_secs(60),
+            repeat_window: Duration::from_secs(15),
         }
     }
 }
@@ -361,10 +362,12 @@ impl BootService {
     pub async fn serve_grub_at(&self, ip: IpAddr, now: Millis) -> GrubAnswer {
         let mut s = self.state.lock().await;
 
+        let chosen_since = |at: Millis| s.next_boot.is_some_and(|sel| sel.set_at > at);
         if let Some(last) = s.last_served
             && last.ip == ip
             && now >= last.at
             && now - last.at < millis(self.settings.repeat_window)
+            && !chosen_since(last.at)
         {
             tracing::debug!(%ip, os = %last.os, "repeat GRUB request inside the repeat window");
             return GrubAnswer {
@@ -569,7 +572,7 @@ mod tests {
         let s = svc();
         s.select_at(Os::Windows, T0).await;
         s.serve_grub_at(PC, T0).await;
-        for dt in [0, 1, 500, 30_000, 59_999] {
+        for dt in [0, 1, 500, 10_000, 14_999] {
             let a = s.serve_grub_at(PC, T0 + dt).await;
             assert_eq!(
                 a,
@@ -580,7 +583,7 @@ mod tests {
                 "dt={dt}"
             );
         }
-        let after = s.serve_grub_at(PC, T0 + 60_000).await;
+        let after = s.serve_grub_at(PC, T0 + 15_000).await;
         assert_eq!(after.os, Os::Linux);
     }
 
@@ -593,15 +596,41 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn new_choice_after_consumption_wins_over_window_for_new_client_only() {
+    async fn a_choice_made_after_grub_asked_is_for_the_next_boot() {
+        // A quick reboot inside the repeat window must not replay the old
+        // answer once something new has been picked.
+        let s = BootService::in_memory(
+            BootSettings {
+                default: Os::Windows,
+                ..Default::default()
+            },
+            crate::new_revision(),
+        );
+        assert_eq!(s.serve_grub_at(PC, T0).await.os, Os::Windows);
+        s.select_at(Os::Linux, T0 + 3_000).await;
+        let a = s.serve_grub_at(PC, T0 + 4_000).await;
+        assert_eq!(
+            a,
+            GrubAnswer {
+                os: Os::Linux,
+                source: AnswerSource::Choice
+            }
+        );
+        assert!(!s.snapshot_at(T0 + 4_000).await.next_boot.explicit);
+        // And that boot's own repeats agree with it.
+        assert_eq!(
+            s.serve_grub_at(PC, T0 + 4_100).await.source,
+            AnswerSource::Repeat
+        );
+    }
+
+    #[tokio::test]
+    async fn repeats_without_a_new_choice_keep_the_answer() {
         let s = svc();
         s.select_at(Os::Windows, T0).await;
         s.serve_grub_at(PC, T0).await;
-        s.select_at(Os::Linux, T0 + 5_000).await;
-        // Same boot still repeating: keep Windows, don't flip mid-boot.
+        // Nothing new picked: a re-fetch in the same boot still says Windows.
         assert_eq!(s.serve_grub_at(PC, T0 + 6_000).await.os, Os::Windows);
-        // The Linux choice is still waiting for the next boot.
-        assert_eq!(s.peek_at(T0 + 6_000).await, Os::Linux);
     }
 
     #[tokio::test]
